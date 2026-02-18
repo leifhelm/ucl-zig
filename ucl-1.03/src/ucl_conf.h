@@ -172,12 +172,12 @@
 #undef UA_SET2
 #undef UA_GET4
 #undef UA_SET4
-#if 1 && (ACC_ARCH_AMD64 || ACC_ARCH_IA32)
+#if 0 && (ACC_ARCH_AMD64 || ACC_ARCH_IA32)
 #  define UA_GET2(p)    (* (const ucl_ushortp) (p))
 #  define UA_SET2(p)    (* (ucl_ushortp) (p))
 #  define UA_GET4(p)    (* (const acc_uint32e_t *) (p))
 #  define UA_SET4(p)    (* (acc_uint32e_t *) (p))
-#elif 0 && (ACC_ARCH_M68K) && (ACC_CC_GNUC >= 0x020900ul)
+#elif 1 && (ACC_ARCH_M68K) && (ACC_CC_GNUC >= 0x020900ul)
    typedef struct { unsigned short v; } __ucl_ua2_t __attribute__((__aligned__(1)));
    typedef struct { unsigned long v; }  __ucl_ua4_t __attribute__((__aligned__(1)));
 #  define UA_GET2(p)    (((const __ucl_ua2_t *)(p))->v)
