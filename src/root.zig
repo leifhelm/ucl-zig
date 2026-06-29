@@ -32,40 +32,39 @@ inline fn unaligned_get(comptime T: type, slice: []const u8) T {
     return @bitCast(slice[0..@sizeOf(T)].*);
 }
 
-inline fn getbit_8(bb: *u32, bc: *u5, src: []const u8, ilen: *ucl_uint, comptime safe: bool) ucl_error!u1 {
+inline fn getbit_8(bb: *u32, bc: *u5, src: []const u8, ilen: *ucl_uint, comptime safe: bool) Error!u1 {
     _ = bc;
     bb.* = if (bb.* & 0x7f != 0) bb.* * 2 else blk: {
-        if (safe and ilen.* >= src.len) return ucl_error.InputOverrun;
+        if (safe and ilen.* >= src.len) return Error.InputOverrun;
         const tmp = @as(u32, @intCast(src[ilen.*])) * 2 + 1;
         ilen.* += 1;
         break :blk tmp;
     };
-    const bit: u1 = @truncate(bb.* >> 8);
-    return bit;
+    return @truncate(bb.* >> 8);
 }
-inline fn getbit_le16(bb: *u32, bc: *u5, src: []const u8, ilen: *ucl_uint, comptime safe: bool) ucl_error!u1 {
+inline fn getbit_le16(bb: *u32, bc: *u5, src: []const u8, ilen: *ucl_uint, comptime safe: bool) Error!u1 {
     _ = bc;
     bb.* *%= 2;
     if (bb.* & 0xffff == 0) {
-        if (safe and ilen.* + 1 >= src.len) return ucl_error.InputOverrun;
+        if (safe and ilen.* + 1 >= src.len) return Error.InputOverrun;
         bb.* = (@as(u32, @intCast(unaligned_get(u16, src[ilen.*..])))) * 2 + 1;
         ilen.* += 2;
     }
     return @truncate(bb.* >> 16);
 }
-inline fn getbit_le32(bb: *u32, bc: *u5, src: []const u8, ilen: *ucl_uint, comptime safe: bool) ucl_error!u1 {
+inline fn getbit_le32(bb: *u32, bc: *u5, src: []const u8, ilen: *ucl_uint, comptime safe: bool) Error!u1 {
     if (bc.* > 0) {
         bc.* -= 1;
         return @truncate(bb.* >> bc.*);
     } else {
-        if (safe and ilen.* + 3 >= src.len) return ucl_error.InputOverrun;
+        if (safe and ilen.* + 3 >= src.len) return Error.InputOverrun;
         bc.* = 31;
         bb.* = unaligned_get(u32, src[ilen.*..]);
         ilen.* += 4;
         return @truncate(bb.* >> 31);
     }
 }
-pub fn decompress(src: []const u8, dst: []u8, dst_len: *usize, comptime variant: NrvVariant, comptime bits: Bits, comptime safe: bool, test_overlap: anytype) ucl_error!void {
+pub fn decompress(src: []const u8, dst: []u8, dst_len: *usize, comptime variant: NrvVariant, comptime bits: Bits, comptime safe: bool, test_overlap: anytype) Error!void {
     const getbit = switch (bits) {
         .bits8 => getbit_8,
         .bits16 => getbit_le16,
@@ -90,10 +89,10 @@ pub fn decompress(src: []const u8, dst: []u8, dst_len: *usize, comptime variant:
         var m_len: ucl_uint = undefined;
 
         while (try getbit(&bb, &bc, src, &ilen, safe) != 0) {
-            if (safe and ilen >= src_len) return ucl_error.InputOverrun;
-            if (safe and olen >= oend) return ucl_error.OutputOverrun;
+            if (safe and ilen >= src_len) return Error.InputOverrun;
+            if (safe and olen >= oend) return Error.OutputOverrun;
             if (test_overlap != null) {
-                if (safe and olen > ilen) return ucl_error.OverlapOverrun;
+                if (safe and olen > ilen) return Error.OverlapOverrun;
             } else {
                 dst[olen] = src[ilen];
             }
@@ -103,8 +102,8 @@ pub fn decompress(src: []const u8, dst: []u8, dst_len: *usize, comptime variant:
         var m_off: ucl_uint = 1;
         while (true) {
             m_off = m_off * 2 + try getbit(&bb, &bc, src, &ilen, safe);
-            if (safe and ilen >= src_len) return ucl_error.InputOverrun;
-            if (safe and m_off > 0xffffff + 3) return ucl_error.LookbehindOverrun;
+            if (safe and ilen >= src_len) return Error.InputOverrun;
+            if (safe and m_off > 0xffffff + 3) return Error.LookbehindOverrun;
             if (try getbit(&bb, &bc, src, &ilen, safe) != 0) break;
             if (variant == .Nrv2d or variant == .Nrv2e) {
                 m_off = (m_off - 1) * 2 + try getbit(&bb, &bc, src, &ilen, safe);
@@ -116,7 +115,7 @@ pub fn decompress(src: []const u8, dst: []u8, dst_len: *usize, comptime variant:
                 m_len = try getbit(&bb, &bc, src, &ilen, safe);
             }
         } else {
-            if (safe and ilen >= src_len) return ucl_error.InputOverrun;
+            if (safe and ilen >= src_len) return Error.InputOverrun;
             m_off = (m_off -% 3) * 256 + src[ilen];
             ilen += 1;
             if (m_off == 0xffffffff)
@@ -138,16 +137,16 @@ pub fn decompress(src: []const u8, dst: []u8, dst_len: *usize, comptime variant:
             m_len += 1;
             while (true) {
                 m_len = m_len * 2 + try getbit(&bb, &bc, src, &ilen, safe);
-                if (safe and ilen >= src_len) return ucl_error.InputOverrun;
-                if (safe and m_len >= oend) return ucl_error.OutputOverrun;
+                if (safe and ilen >= src_len) return Error.InputOverrun;
+                if (safe and m_len >= oend) return Error.OutputOverrun;
                 if (try getbit(&bb, &bc, src, &ilen, safe) != 0) break;
             }
             m_len += if (variant == .Nrv2e) 3 else 2;
         }
         m_len += @intFromBool(m_off > M2_MAX_OFFSET(variant));
-        if (safe and olen + m_len > oend) return ucl_error.OutputOverrun;
-        if (safe and m_off > olen) return ucl_error.LookbehindOverrun;
-        if (olen + m_len >= dst.len) return ucl_error.OutputOverrun;
+        if (safe and olen + m_len > oend) return Error.OutputOverrun;
+        if (safe and m_off > olen) return Error.LookbehindOverrun;
+        if (olen + m_len >= dst.len) return Error.OutputOverrun;
         if (test_overlap == null) {
             var m_pos: [*]const u8 = (dst.ptr + olen) - m_off;
             dst[olen] = m_pos[0];
@@ -166,9 +165,9 @@ pub fn decompress(src: []const u8, dst: []u8, dst_len: *usize, comptime variant:
         }
     }
     return if (ilen == src_len) {} else if (ilen < src_len)
-        ucl_error.InputNotConsumed
+        Error.InputNotConsumed
     else
-        ucl_error.InputOverrun;
+        Error.InputOverrun;
 }
 
 pub const swd_uint = if (SWD_N + 2 * SWD_F < std.math.maxInt(u16)) u16 else u32;
@@ -242,7 +241,7 @@ const SlidingWindowDictionary = struct {
             }
         }
     }
-    pub fn swd_init(self: *Self, allocator: Allocator, dict: []const u8) ucl_error!void {
+    pub fn swd_init(self: *Self, allocator: Allocator, dict: []const u8) Error!void {
         self.b = &.{};
         self.head3 = &.{};
         self.succ3 = &.{};
@@ -258,7 +257,7 @@ const SlidingWindowDictionary = struct {
         }
         self.threshold = SWD_THRESHOLD;
         if (self.n > SWD_N or self.f > SWD_F)
-            return ucl_error.InvalidArgument;
+            return Error.InvalidArgument;
         self.b = try allocator.alloc(u8, self.n + 2 * self.f);
         errdefer allocator.free(self.b);
         self.head3 = try allocator.alloc(swd_uint, SWD_HSIZE);
@@ -281,7 +280,7 @@ const SlidingWindowDictionary = struct {
         self.lazy_insert = 0;
 
         self.b_size = self.n + self.f;
-        if ((self.b_size + self.f) >= std.math.maxInt(swd_uint)) return ucl_error.Error;
+        if ((self.b_size + self.f) >= std.math.maxInt(swd_uint)) return Error.Error;
         self.b_wrap = self.b.ptr + self.b_size;
         self.node_count = self.n;
 
@@ -595,7 +594,7 @@ pub fn compress(
     level: u8,
     conf: ?*const struct_ucl_compress_config_t,
     result: ?*[16]ucl_uint,
-) ucl_error![]u8 {
+) Error![]u8 {
     const struct_swd_config_t = struct {
         try_lazy: c_uint,
         good_length: ucl_uint,
@@ -699,7 +698,7 @@ pub fn compress(
         },
         // max. compression
     };
-    if (level < 1 or level > 10) return ucl_error.InvalidArgument;
+    if (level < 1 or level > 10) return Error.InvalidArgument;
     const sc = swd_config[level - 1];
 
     var result_buffer: [16]ucl_uint = undefined;
@@ -736,10 +735,10 @@ pub fn compress(
     if (in.len < the_swd.n) {
         the_swd.n = @intCast(@max(in.len, 256));
     }
-    if (the_swd.f < 8 or the_swd.n < 256) return ucl_error.InvalidArgument;
+    if (the_swd.f < 8 or the_swd.n < 256) return Error.InvalidArgument;
     try c.init_match(allocator, &the_swd, &.{}, sc.flags);
     defer the_swd.swd_exit(allocator);
-    if (SWD_HSIZE - 1 != the_swd.hmask) return ucl_error.Error;
+    if (SWD_HSIZE - 1 != the_swd.hmask) return Error.Error;
 
     if (sc.max_chain > 0) {
         the_swd.max_chain = sc.max_chain;
@@ -900,7 +899,7 @@ pub const Compress = struct {
     rep_bytes: c_ulong = @import("std").mem.zeroes(c_ulong),
     lazy: c_ulong = @import("std").mem.zeroes(c_ulong),
 
-    pub fn init_match(self: *Self, allocator: Allocator, s: *SlidingWindowDictionary, dict: []const u8, flags: u32) ucl_error!void {
+    pub fn init_match(self: *Self, allocator: Allocator, s: *SlidingWindowDictionary, dict: []const u8, flags: u32) Error!void {
         std.debug.assert(self.init == 0);
         self.init = 1;
 
@@ -1149,7 +1148,7 @@ pub const Compress = struct {
         return b;
     }
 };
-pub const ucl_error = error{
+pub const Error = error{
     Error,
     InvalidArgument,
     OutOfMemory,
@@ -1164,33 +1163,33 @@ pub const ucl_error = error{
 pub fn int_from_ucl_error_return(err: anytype) c_int {
     return if (err) |_| 0 else |e| int_from_ucl_error(e);
 }
-pub fn int_from_ucl_error(err: ucl_error) c_int {
+pub fn int_from_ucl_error(err: Error) c_int {
     return switch (err) {
-        ucl_error.Error => -1,
-        ucl_error.InvalidArgument => -2,
-        ucl_error.OutOfMemory => -3,
-        ucl_error.NotCompressible => -101,
-        ucl_error.InputOverrun => -201,
-        ucl_error.OutputOverrun => -202,
-        ucl_error.LookbehindOverrun => -203,
-        ucl_error.EofNotFound => -204,
-        ucl_error.InputNotConsumed => -205,
-        ucl_error.OverlapOverrun => -206,
+        Error.Error => -1,
+        Error.InvalidArgument => -2,
+        Error.OutOfMemory => -3,
+        Error.NotCompressible => -101,
+        Error.InputOverrun => -201,
+        Error.OutputOverrun => -202,
+        Error.LookbehindOverrun => -203,
+        Error.EofNotFound => -204,
+        Error.InputNotConsumed => -205,
+        Error.OverlapOverrun => -206,
     };
 }
-pub fn ucl_error_from_int(err: c_int) ucl_error!void {
+pub fn ucl_error_from_int(err: c_int) Error!void {
     return switch (err) {
         0 => {},
-        -1 => ucl_error.Error,
-        -2 => ucl_error.InvalidArgument,
-        -3 => ucl_error.OutOfMemory,
-        -101 => ucl_error.NotCompressible,
-        -201 => ucl_error.InputOverrun,
-        -202 => ucl_error.OutputOverrun,
-        -203 => ucl_error.LookbehindOverrun,
-        -204 => ucl_error.EofNotFound,
-        -205 => ucl_error.InputNotConsumed,
-        -206 => ucl_error.OverlapOverrun,
+        -1 => Error.Error,
+        -2 => Error.InvalidArgument,
+        -3 => Error.OutOfMemory,
+        -101 => Error.NotCompressible,
+        -201 => Error.InputOverrun,
+        -202 => Error.OutputOverrun,
+        -203 => Error.LookbehindOverrun,
+        -204 => Error.EofNotFound,
+        -205 => Error.InputNotConsumed,
+        -206 => Error.OverlapOverrun,
         else => unreachable,
     };
 }
