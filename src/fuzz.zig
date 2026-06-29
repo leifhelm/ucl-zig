@@ -13,7 +13,8 @@ export fn zig_fuzz_test(buf: [*]u8, len: isize) void {
 
 pub fn fuzz(content: []const u8) !void {
     // return test_compress(content);
-    return test_decompress(content);
+    // return test_decompress(content);
+    return test_compress_decompress(content);
 }
 
 fn test_compress(content: []const u8) !void {
@@ -90,4 +91,41 @@ fn test_decompress_variant(input: []const u8, comptime variant: ucl_zig.NrvVaria
         32 => ucl_zig.decompress(compressed, &decompressed, &decompressed_len, variant, .bits32, true, null) catch {},
         else => return,
     }
+}
+
+fn test_compress_decompress(input: []const u8) !void {
+    if (input.len <= 2) return;
+    const level = input[0] % 9 + 1;
+    switch (input[1] % 3) {
+        0 => try test_compress_decompress_variant(input[1..], level, .Nrv2b),
+        1 => try test_compress_decompress_variant(input[1..], level, .Nrv2d),
+        2 => try test_compress_decompress_variant(input[1..], level, .Nrv2e),
+        else => return,
+    }
+}
+
+fn test_compress_decompress_variant(input: []const u8, level: u8, comptime variant: ucl_zig.NrvVariant) !void {
+    if (input.len == 0) return;
+    var decompressed: [1024 * 1024]u8 = undefined;
+    var decompressed_len: usize = undefined;
+    const bits: ucl_zig.Bits = switch (input[0] % 3) {
+        0 => .bits8,
+        1 => .bits16,
+        2 => .bits32,
+        else => unreachable,
+    };
+
+    const content = input[1..];
+
+    const config: ucl_zig.ucl_compress_config_t = .{ .bits = bits };
+    var compressed_buf: [1024 * 1024]u8 = undefined;
+    const compressed = try ucl_zig.compress(allocator, variant, content, &compressed_buf, null, level, &config, null);
+
+    switch (bits) {
+        .bits8 => ucl_zig.decompress(compressed, &decompressed, &decompressed_len, variant, .bits8, true, null) catch {},
+        .bits16 => ucl_zig.decompress(compressed, &decompressed, &decompressed_len, variant, .bits16, true, null) catch {},
+        .bits32 => ucl_zig.decompress(compressed, &decompressed, &decompressed_len, variant, .bits32, true, null) catch {},
+    }
+
+    try std.testing.expectEqualSlices(u8, content, decompressed[0..decompressed_len]);
 }

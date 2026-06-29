@@ -1,8 +1,10 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const has_afl = b.option(bool, "afl", "Add targets which need AFL++") orelse false;
 
     const ucl_zig = b.addModule("ucl", .{
         .root_source_file = b.path("src/root.zig"),
@@ -80,39 +82,42 @@ pub fn build(b: *std.Build) void {
     const afl = @import("afl_kit");
 
     // Define a step for generating fuzzing tooling:
-    const fuzz = b.step("fuzz", "Generate an instrumented executable for AFL++");
-    const afl_obj = b.addObject(.{
-        .name = "my_fuzz_obj",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/fuzz.zig"),
-            .target = target,
-            .optimize = .Debug,
-            .imports = &.{
-                .{ .name = "ucl", .module = ucl_zig },
-                .{ .name = "ucl_c", .module = ucl_c },
-            },
-        }),
-    });
+    if (has_afl) {
+        const fuzz = b.step("fuzz", "Generate an instrumented executable for AFL++");
+        if (has_afl) {
+            const afl_obj = b.addObject(.{
+                .name = "my_fuzz_obj",
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path("src/fuzz.zig"),
+                    .target = target,
+                    .optimize = .Debug,
+                    .imports = &.{
+                        .{ .name = "ucl", .module = ucl_zig },
+                        .{ .name = "ucl_c", .module = ucl_c },
+                    },
+                }),
+            });
 
-    // Required options:
-    afl_obj.root_module.stack_check = false; // not linking with compiler-rt
-    afl_obj.root_module.link_libc = true; // afl runtime depends on libc
-    afl_obj.root_module.fuzz = true;
+            // Required options:
+            afl_obj.root_module.stack_check = false; // not linking with compiler-rt
+            afl_obj.root_module.link_libc = true; // afl runtime depends on libc
+            afl_obj.root_module.fuzz = true;
 
-    // Generate an instrumented executable:
-    const afl_fuzz = afl.addInstrumentedExe(b, target, optimize, null, true, afl_obj, &.{
-        "-Iucl-1.03",
-        "-Iucl-1.03/include",
-        "ucl-1.03/src/alloc.c",
-        "ucl-1.03/src/n2b_99.c",
-        "ucl-1.03/src/n2d_99.c",
-        "ucl-1.03/src/n2e_99.c",
-        "ucl-1.03/src/ucl_init.c",
-        "ucl-1.03/src/ucl_util.c",
-        "ucl-1.03/src/ucl_ptr.c",
-    });
-    // Install it
-    fuzz.dependOn(&b.addInstallBinFile(afl_fuzz.?, "fuzz").step);
+            // Generate an instrumented executable:
+            const afl_fuzz = afl.addInstrumentedExe(b, target, optimize, null, true, afl_obj, &.{
+                "-Iucl-1.03",
+                "-Iucl-1.03/include",
+                "ucl-1.03/src/alloc.c",
+                "ucl-1.03/src/n2b_99.c",
+                "ucl-1.03/src/n2d_99.c",
+                "ucl-1.03/src/n2e_99.c",
+                "ucl-1.03/src/ucl_init.c",
+                "ucl-1.03/src/ucl_util.c",
+                "ucl-1.03/src/ucl_ptr.c",
+            });
+            fuzz.dependOn(&b.addInstallBinFile(afl_fuzz.?, "fuzz").step);
+        }
+    }
 
     const fuzz_check = b.addExecutable(.{
         .name = "fuzz-check",
@@ -126,7 +131,6 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    b.installArtifact(fuzz_check);
     const fuzz_check_step = b.step("fuzz-check", "Run fuzz binary on input");
     const fuzz_check_cmd = b.addRunArtifact(fuzz_check);
     fuzz_check_step.dependOn(&fuzz_check_cmd.step);
