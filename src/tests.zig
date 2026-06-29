@@ -8,7 +8,7 @@ fn test_compress(content: []const u8, level: u8, comptime variant: ucl_zig.NrvVa
     var reference_out: [16536]u8 = undefined;
     var reference_out_len: ucl_zig.ucl_uint = reference_out.len;
 
-    const config = ucl_zig.ucl_compress_config_t{
+    const config = ucl_zig.CompressConfig{
         .bits = bits,
     };
     const reference_config: ucl_c.ucl_compress_config_t = .{
@@ -38,7 +38,7 @@ fn test_compress(content: []const u8, level: u8, comptime variant: ucl_zig.NrvVa
 fn compress_decompress(input: []const u8, level: u8, comptime variant: ucl_zig.NrvVariant, comptime bits: ucl_zig.Bits) anyerror!void {
     var out: [16536]u8 = undefined;
 
-    const config = ucl_zig.ucl_compress_config_t{
+    const config = ucl_zig.CompressConfig{
         .bits = bits,
     };
 

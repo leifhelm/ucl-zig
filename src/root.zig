@@ -6,11 +6,11 @@ pub const NrvVariant = enum {
     Nrv2e,
 };
 pub const ucl_uint = c_uint;
-pub const ucl_progress_callback_t = struct {
+pub const ProgressCallback = struct {
     callback: *const fn (ucl_uint, ucl_uint, c_int, ?*anyopaque) void,
     user: ?*anyopaque = null,
 };
-pub const struct_ucl_compress_config_t = struct {
+pub const CompressConfig = struct {
     bits: Bits = .bits8,
     max_offset: ucl_uint = std.math.maxInt(ucl_uint),
     max_match: ucl_uint = std.math.maxInt(ucl_uint),
@@ -590,12 +590,12 @@ pub fn compress(
     comptime variant: NrvVariant,
     in: []const u8,
     out: []u8,
-    call_back: ?*ucl_progress_callback_t,
+    call_back: ?*ProgressCallback,
     level: u8,
-    conf: ?*const struct_ucl_compress_config_t,
+    conf: ?*const CompressConfig,
     result: ?*[16]ucl_uint,
 ) Error![]u8 {
-    const struct_swd_config_t = struct {
+    const SwdConfig = struct {
         try_lazy: c_uint,
         good_length: ucl_uint,
         max_lazy: ucl_uint,
@@ -604,9 +604,9 @@ pub fn compress(
         flags: u32,
         max_offset: u32,
     };
-    const swd_config = [_]struct_swd_config_t{
+    const swd_config = [_]SwdConfig{
         // faster compression
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 0,
             .good_length = 0,
             .max_lazy = 0,
@@ -615,7 +615,7 @@ pub fn compress(
             .flags = 0,
             .max_offset = 48 * 1024,
         },
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 0,
             .good_length = 0,
             .max_lazy = 0,
@@ -624,7 +624,7 @@ pub fn compress(
             .flags = 0,
             .max_offset = 48 * 1024,
         },
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 0,
             .good_length = 0,
             .max_lazy = 0,
@@ -633,7 +633,7 @@ pub fn compress(
             .flags = 0,
             .max_offset = 48 * 1024,
         },
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 1,
             .good_length = 4,
             .max_lazy = 4,
@@ -642,7 +642,7 @@ pub fn compress(
             .flags = 0,
             .max_offset = 48 * 1024,
         },
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 1,
             .good_length = 8,
             .max_lazy = 16,
@@ -651,7 +651,7 @@ pub fn compress(
             .flags = 0,
             .max_offset = 48 * 1024,
         },
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 1,
             .good_length = 8,
             .max_lazy = 16,
@@ -660,7 +660,7 @@ pub fn compress(
             .flags = 0,
             .max_offset = 48 * 1024,
         },
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 2,
             .good_length = 8,
             .max_lazy = 32,
@@ -669,7 +669,7 @@ pub fn compress(
             .flags = 0,
             .max_offset = 128 * 1024,
         },
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 2,
             .good_length = 32,
             .max_lazy = 128,
@@ -678,7 +678,7 @@ pub fn compress(
             .flags = 1,
             .max_offset = 128 * 1024,
         },
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 2,
             .good_length = 32,
             .max_lazy = 128,
@@ -687,7 +687,7 @@ pub fn compress(
             .flags = 1,
             .max_offset = 256 * 1024,
         },
-        struct_swd_config_t{
+        SwdConfig{
             .try_lazy = 2,
             .good_length = SWD_F,
             .max_lazy = SWD_F,
@@ -884,10 +884,10 @@ pub const Compress = struct {
 
     bb: BitBuffer = .{},
 
-    conf: struct_ucl_compress_config_t = .{},
+    conf: CompressConfig = .{},
     result: *[16]ucl_uint,
 
-    cb: ?*ucl_progress_callback_t = null,
+    cb: ?*ProgressCallback = null,
 
     textsize: ucl_uint = @import("std").mem.zeroes(ucl_uint), // text size counter
     codesize: ucl_uint = @import("std").mem.zeroes(ucl_uint), // code size counter
@@ -1165,52 +1165,51 @@ pub fn int_from_ucl_error_return(err: anytype) c_int {
 }
 pub fn int_from_ucl_error(err: Error) c_int {
     return switch (err) {
-        Error.Error => -1,
-        Error.InvalidArgument => -2,
-        Error.OutOfMemory => -3,
-        Error.NotCompressible => -101,
-        Error.InputOverrun => -201,
-        Error.OutputOverrun => -202,
-        Error.LookbehindOverrun => -203,
-        Error.EofNotFound => -204,
-        Error.InputNotConsumed => -205,
-        Error.OverlapOverrun => -206,
+        Error.Error => UCL_E_ERROR,
+        Error.InvalidArgument => UCL_E_INVALID_ARGUMENT,
+        Error.OutOfMemory => UCL_E_OUT_OF_MEMORY,
+        Error.NotCompressible => UCL_E_NOT_COMPRESSIBLE,
+        Error.InputOverrun => UCL_E_INPUT_OVERRUN,
+        Error.OutputOverrun => UCL_E_OUTPUT_OVERRUN,
+        Error.LookbehindOverrun => UCL_E_LOOKBEHIND_OVERRUN,
+        Error.EofNotFound => UCL_E_EOF_NOT_FOUND,
+        Error.InputNotConsumed => UCL_E_INPUT_NOT_CONSUMED,
+        Error.OverlapOverrun => UCL_E_OVERLAP_OVERRUN,
     };
 }
 pub fn ucl_error_from_int(err: c_int) Error!void {
     return switch (err) {
         0 => {},
-        -1 => Error.Error,
-        -2 => Error.InvalidArgument,
-        -3 => Error.OutOfMemory,
-        -101 => Error.NotCompressible,
-        -201 => Error.InputOverrun,
-        -202 => Error.OutputOverrun,
-        -203 => Error.LookbehindOverrun,
-        -204 => Error.EofNotFound,
-        -205 => Error.InputNotConsumed,
-        -206 => Error.OverlapOverrun,
+        UCL_E_ERROR => Error.Error,
+        UCL_E_INVALID_ARGUMENT => Error.InvalidArgument,
+        UCL_E_OUT_OF_MEMORY => Error.OutOfMemory,
+        UCL_E_NOT_COMPRESSIBLE => Error.NotCompressible,
+        UCL_E_INPUT_OVERRUN => Error.InputOverrun,
+        UCL_E_OUTPUT_OVERRUN => Error.OutputOverrun,
+        UCL_E_LOOKBEHIND_OVERRUN => Error.LookbehindOverrun,
+        UCL_E_EOF_NOT_FOUND => Error.EofNotFound,
+        UCL_E_INPUT_NOT_CONSUMED => Error.InputNotConsumed,
+        UCL_E_OVERLAP_OVERRUN => Error.OverlapOverrun,
         else => unreachable,
     };
 }
-pub const UCL_E_OK = @as(c_int, 0);
-pub const UCL_E_ERROR = -@as(c_int, 1);
-pub const UCL_E_INVALID_ARGUMENT = -@as(c_int, 2);
-pub const UCL_E_OUT_OF_MEMORY = -@as(c_int, 3);
-pub const UCL_E_NOT_COMPRESSIBLE = -@as(c_int, 101);
-pub const UCL_E_INPUT_OVERRUN = -@as(c_int, 201);
-pub const UCL_E_OUTPUT_OVERRUN = -@as(c_int, 202);
-pub const UCL_E_LOOKBEHIND_OVERRUN = -@as(c_int, 203);
-pub const UCL_E_EOF_NOT_FOUND = -@as(c_int, 204);
-pub const UCL_E_INPUT_NOT_CONSUMED = -@as(c_int, 205);
-pub const UCL_E_OVERLAP_OVERRUN = -@as(c_int, 206);
+pub const UCL_E_OK: c_int = 0;
+pub const UCL_E_ERROR: c_int = -1;
+pub const UCL_E_INVALID_ARGUMENT: c_int = -2;
+pub const UCL_E_OUT_OF_MEMORY: c_int = -3;
+pub const UCL_E_NOT_COMPRESSIBLE: c_int = -101;
+pub const UCL_E_INPUT_OVERRUN: c_int = -201;
+pub const UCL_E_OUTPUT_OVERRUN: c_int = -202;
+pub const UCL_E_LOOKBEHIND_OVERRUN: c_int = -203;
+pub const UCL_E_EOF_NOT_FOUND: c_int = -204;
+pub const UCL_E_INPUT_NOT_CONSUMED: c_int = -205;
+pub const UCL_E_OVERLAP_OVERRUN: c_int = -206;
 const SWD_USE_MALLOC: bool = true;
 const SWD_HMASK: u32 = 65535;
 // const SWD_N: c_int = 8 * 1024 * 1024;
 const SWD_N: c_int = 16 * 1024;
 const SWD_F: c_int = 2048;
 const SWD_THRESHOLD: c_int = 1;
-const ucl_swd_t = SlidingWindowDictionary;
 fn getbyte(c: *Compress) c_int {
     if (c.ip < c.in_end) {
         const tmp = c.ip.*;
@@ -1230,10 +1229,10 @@ inline fn HEAD2(b: []const u8, p: usize) ucl_uint {
     return unaligned_get(u16, b[p..]);
 }
 const NIL2 = std.math.maxInt(swd_uint);
-inline fn s_get_head3(s: *ucl_swd_t, key: anytype) @TypeOf(s.*.head3[@as(usize, @intCast(key))]) {
+inline fn s_get_head3(s: *SlidingWindowDictionary, key: anytype) @TypeOf(s.*.head3[@as(usize, @intCast(key))]) {
     return s.head3[@as(usize, @intCast(key))];
 }
-inline fn swd_pos2off(s: *ucl_swd_t, pos: ucl_uint) ucl_uint {
+inline fn swd_pos2off(s: *SlidingWindowDictionary, pos: ucl_uint) ucl_uint {
     return if (s.bp > pos) s.bp - pos else s.b_size - (pos - s.bp);
 }
 fn assert_match(swd: *const SlidingWindowDictionary, m_len: ucl_uint, m_off: ucl_uint) void {
@@ -1256,5 +1255,3 @@ fn assert_match(swd: *const SlidingWindowDictionary, m_len: ucl_uint, m_off: ucl
         }
     }
 }
-
-pub const ucl_compress_config_t = struct_ucl_compress_config_t;
